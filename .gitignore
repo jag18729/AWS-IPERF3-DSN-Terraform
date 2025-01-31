@@ -1,0 +1,25 @@
+# SSH Keys
+*.pem
+*_key
+*_key.pub
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+*.tfvars
+
+# Ansible
+*.retry
+
+# MacOS
+.DS_Store
+
+# Environment variables
+.env
+*.env
+
+# Local development
+notes.txt
+local/
