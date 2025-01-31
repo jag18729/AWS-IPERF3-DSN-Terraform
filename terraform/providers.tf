@@ -14,12 +14,6 @@ provider "aws" {
   alias  = "pasadena"
 }
 
-# Spain (Server0)
-provider "aws" {
-  region = "eu-south-2"
-  alias  = "spain"
-}
-
 # Canberra (Server1)
 provider "aws" {
   region = "ap-southeast-2"
@@ -31,3 +25,10 @@ provider "aws" {
   region = "us-west-1"
   alias  = "barstow"
 }
+
+/* Commented Spain Provider
+provider "aws" {
+  region = "eu-south-2"
+  alias  = "spain"
+}
+*/

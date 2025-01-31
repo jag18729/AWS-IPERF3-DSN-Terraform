@@ -10,10 +10,10 @@ variable "vpc_cidrs" {
   description = "CIDR blocks for each VPC"
   type        = map(string)
   default = {
-    pasadena = "10.0.0.0/27"
-    spain    = "10.0.0.32/27"
-    canberra = "10.0.0.64/27"
-    barstow  = "10.0.0.96/27"
+    pasadena = "10.0.1.0/27"
+    canberra = "10.0.2.0/27"
+    barstow  = "10.0.3.0/27"
+    # spain    = "10.0.4.0/27"  # Commented but preserved for future use
   }
 }
 
@@ -42,10 +42,17 @@ variable "amis" {
   type        = map(string)
   default = {
     us-west-2      = "ami-0735c191cf914754d"  # Pasadena
-    eu-south-2     = "ami-0a6006bac3b9bb8d3"  # Spain
     ap-southeast-2 = "ami-0310483fb2b488153"  # Canberra
     us-west-1      = "ami-0a0409af1cb831414"  # Barstow
+    # eu-south-2   = "ami-0a6006bac3b9bb8d3"  # Spain (commented)
   }
+}
+
+# Auto-termination configuration
+variable "termination_days" {
+  description = "Number of days after which resources will be terminated"
+  type        = number
+  default     = 30
 }
 
 # Tags
@@ -56,5 +63,6 @@ variable "tags" {
     Environment = "test"
     Project     = "iperf3-network-testing"
     Terraform   = "true"
+    ManagedBy   = "terraform"
   }
 }
