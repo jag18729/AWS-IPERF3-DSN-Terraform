@@ -27,12 +27,13 @@ Required AWS permissions
 SSH key pairs
 
 Directory Structure
-Copy.
 ├── terraform/       # Infrastructure as Code
 ├── ansible/         # Configuration management
 ├── scripts/         # Helper scripts
 └── .github/        # GitHub Actions workflows
+
 Security Note
 Sensitive information such as SSH keys and AWS credentials should never be committed to this repository.
 Usage
+
 Detailed usage instructions will be provided in each component's directory.
