@@ -1,0 +1,720 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS iPerf3 Distributed Network Testing Automation'
+
+Parameters:
+  ProjectName:
+    Description: Name tag for all resources
+    Type: String
+    Default: iperf3-test
+  
+  AllowedIP:
+    Description: Your IP address for bastion host access
+    Type: String
+    
+  InstanceType:
+    Description: EC2 instance type
+    Type: String
+    Default: t3.micro
+  
+  SSHKeyName:
+    Description: Name of an existing EC2 KeyPair to enable SSH access
+    Type: AWS::EC2::KeyPair::KeyName
+  
+  PasadenaCidr:
+    Description: CIDR block for Pasadena VPC
+    Type: String
+    Default: 10.0.1.0/27
+  
+  CanberraCidr:
+    Description: CIDR block for Canberra VPC
+    Type: String
+    Default: 10.0.2.0/27
+  
+  BarstowCidr:
+    Description: CIDR block for Barstow VPC
+    Type: String
+    Default: 10.0.3.0/27
+  
+  TerminationDays:
+    Description: Number of days after which resources will be terminated
+    Type: Number
+    Default: 30
+  
+  PasadenaAMI:
+    Description: AMI ID for Pasadena region
+    Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+  
+  CanberraAMI:
+    Description: AMI ID for Canberra region
+    Type: String
+    Default: ami-0310483fb2b488153
+  
+  BarstowAMI:
+    Description: AMI ID for Barstow region
+    Type: String
+    Default: ami-0a0409af1cb831414
+
+Resources:
+  # PASADENA VPC (Client + Bastion) - Primary Location
+  PasadenaVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: !Ref PasadenaCidr
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-pasadena-vpc
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+        - Key: Terraform
+          Value: true
+        - Key: ManagedBy
+          Value: cloudformation
+
+  PasadenaSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref PasadenaVPC
+      CidrBlock: !Ref PasadenaCidr
+      AvailabilityZone: us-west-2a
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-pasadena-subnet
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  PasadenaIGW:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-pasadena-igw
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  PasadenaIGWAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref PasadenaVPC
+      InternetGatewayId: !Ref PasadenaIGW
+
+  PasadenaRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref PasadenaVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-pasadena-rt
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  PasadenaInternetRoute:
+    Type: AWS::EC2::Route
+    DependsOn: PasadenaIGWAttachment
+    Properties:
+      RouteTableId: !Ref PasadenaRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref PasadenaIGW
+
+  PasadenaSubnetRouteTableAssoc:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PasadenaSubnet
+      RouteTableId: !Ref PasadenaRouteTable
+
+  # CANBERRA VPC (Server1)
+  CanberraVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref CanberraCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-canberra-vpc
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+        - Key: Terraform
+          Value: true
+        - Key: ManagedBy
+          Value: cloudformation
+    
+  CanberraSubnet:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref CanberraVPC
+      CidrBlock: !Ref CanberraCidr
+      AvailabilityZone: ap-southeast-2a
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-canberra-subnet
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  CanberraIGW:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-canberra-igw
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  CanberraIGWAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref CanberraVPC
+      InternetGatewayId: !Ref CanberraIGW
+
+  CanberraRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref CanberraVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-canberra-rt
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  CanberraInternetRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: CanberraIGWAttachment
+    Properties:
+      RouteTableId: !Ref CanberraRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref CanberraIGW
+
+  CanberraSubnetRouteTableAssoc:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref CanberraSubnet
+      RouteTableId: !Ref CanberraRouteTable
+
+  # BARSTOW VPC (Server2)
+  BarstowVPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !Ref BarstowCidr
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-barstow-vpc
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+        - Key: Terraform
+          Value: true
+        - Key: ManagedBy
+          Value: cloudformation
+    
+  BarstowSubnet:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      VpcId: !Ref BarstowVPC
+      CidrBlock: !Ref BarstowCidr
+      AvailabilityZone: us-west-1a
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-barstow-subnet
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  BarstowIGW:
+    Type: 'AWS::EC2::InternetGateway'
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-barstow-igw
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  BarstowIGWAttachment:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref BarstowVPC
+      InternetGatewayId: !Ref BarstowIGW
+
+  BarstowRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref BarstowVPC
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-barstow-rt
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  BarstowInternetRoute:
+    Type: 'AWS::EC2::Route'
+    DependsOn: BarstowIGWAttachment
+    Properties:
+      RouteTableId: !Ref BarstowRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref BarstowIGW
+
+  BarstowSubnetRouteTableAssoc:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      SubnetId: !Ref BarstowSubnet
+      RouteTableId: !Ref BarstowRouteTable
+
+  # Security Groups
+  BastionSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub ${ProjectName}-bastion-sg
+      GroupDescription: Security group for Bastion host
+      VpcId: !Ref PasadenaVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Sub ${AllowedIP}/32
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Sub ${AllowedIP}/32
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-bastion-sg
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  ClientSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub ${ProjectName}-client-sg
+      GroupDescription: Security group for iPerf3 client
+      VpcId: !Ref PasadenaVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          SourceSecurityGroupId: !Ref BastionSecurityGroup
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref PasadenaCidr
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref CanberraCidr
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref BarstowCidr
+        - IpProtocol: tcp
+          FromPort: 5201
+          ToPort: 5201
+          CidrIp: !Ref PasadenaCidr
+        - IpProtocol: tcp
+          FromPort: 5201
+          ToPort: 5201
+          CidrIp: !Ref CanberraCidr
+        - IpProtocol: tcp
+          FromPort: 5201
+          ToPort: 5201
+          CidrIp: !Ref BarstowCidr
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-client-sg
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  ServerCanberraSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub ${ProjectName}-server-canberra-sg
+      GroupDescription: Security group for iPerf3 server in Canberra
+      VpcId: !Ref CanberraVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref PasadenaCidr
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref PasadenaCidr
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref CanberraCidr
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref BarstowCidr
+        - IpProtocol: tcp
+          FromPort: 5201
+          ToPort: 5201
+          CidrIp: !Ref PasadenaCidr
+        - IpProtocol: tcp
+          FromPort: 5201
+          ToPort: 5201
+          CidrIp: !Ref CanberraCidr
+        - IpProtocol: tcp
+          FromPort: 5201
+          ToPort: 5201
+          CidrIp: !Ref BarstowCidr
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-server-canberra-sg
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  ServerBarstowSecurityGroup:
+    Type: 'AWS::EC2::SecurityGroup'
+    Properties:
+      GroupName: !Sub ${ProjectName}-server-barstow-sg
+      GroupDescription: Security group for iPerf3 server in Barstow
+      VpcId: !Ref BarstowVPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: !Ref PasadenaCidr
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref PasadenaCidr
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref CanberraCidr
+        - IpProtocol: icmp
+          FromPort: -1
+          ToPort: -1
+          CidrIp: !Ref BarstowCidr
+        - IpProtocol: tcp
+          FromPort: 5201
+          ToPort: 5201
+          CidrIp: !Ref PasadenaCidr
+        - IpProtocol: tcp
+          FromPort: 5201
+          ToPort: 5201
+          CidrIp: !Ref CanberraCidr
+        - IpProtocol: tcp
+          FromPort: 5201
+          ToPort: 5201
+          CidrIp: !Ref BarstowCidr
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          FromPort: 0
+          ToPort: 0
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-server-barstow-sg
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  # VPC Peering Connections
+  PasadenaCanberraPeering:
+    Type: 'AWS::EC2::VPCPeeringConnection'
+    Properties:
+      VpcId: !Ref PasadenaVPC
+      PeerVpcId: !Ref CanberraVPC
+      PeerRegion: ap-southeast-2
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-pasadena-canberra-peer
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  PasadenaBarstowPeering:
+    Type: 'AWS::EC2::VPCPeeringConnection'
+    Properties:
+      VpcId: !Ref PasadenaVPC
+      PeerVpcId: !Ref BarstowVPC
+      PeerRegion: us-west-1
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-pasadena-barstow-peer
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+
+  # Peering Routes
+  PasadenaToCanberraRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PasadenaRouteTable
+      DestinationCidrBlock: !Ref CanberraCidr
+      VpcPeeringConnectionId: !Ref PasadenaCanberraPeering
+
+  PasadenaToBarstowRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PasadenaRouteTable
+      DestinationCidrBlock: !Ref BarstowCidr
+      VpcPeeringConnectionId: !Ref PasadenaBarstowPeering
+
+  CanberraToPasadenaRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref CanberraRouteTable
+      DestinationCidrBlock: !Ref PasadenaCidr
+      VpcPeeringConnectionId: !Ref PasadenaCanberraPeering
+
+  BarstowToPasadenaRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref BarstowRouteTable
+      DestinationCidrBlock: !Ref PasadenaCidr
+      VpcPeeringConnectionId: !Ref PasadenaBarstowPeering
+
+  # EC2 Instances
+  BastionInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: !Ref PasadenaAMI
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref PasadenaSubnet
+      SecurityGroupIds:
+        - !Ref BastionSecurityGroup
+      KeyName: !Ref SSHKeyName
+      SourceDestCheck: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-bastion
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+        - Key: AutoTerminate
+          Value: true
+        - Key: TerminationDate
+          Value: !Sub '{{resolve:custom:TerminationDate:${TerminationDays}}}'
+
+  ClientInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: !Ref PasadenaAMI
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref PasadenaSubnet
+      SecurityGroupIds:
+        - !Ref ClientSecurityGroup
+      KeyName: !Ref SSHKeyName
+      SourceDestCheck: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-client
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+        - Key: AutoTerminate
+          Value: true
+        - Key: TerminationDate
+          Value: !Sub '{{resolve:custom:TerminationDate:${TerminationDays}}}'
+
+  ServerCanberraInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: !Ref CanberraAMI
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref CanberraSubnet
+      SecurityGroupIds:
+        - !Ref ServerCanberraSecurityGroup
+      KeyName: !Ref SSHKeyName
+      SourceDestCheck: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-server-canberra
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+        - Key: AutoTerminate
+          Value: true
+        - Key: TerminationDate
+          Value: !Sub '{{resolve:custom:TerminationDate:${TerminationDays}}}'
+
+  ServerBarstowInstance:
+    Type: 'AWS::EC2::Instance'
+    Properties:
+      ImageId: !Ref BarstowAMI
+      InstanceType: !Ref InstanceType
+      SubnetId: !Ref BarstowSubnet
+      SecurityGroupIds:
+        - !Ref ServerBarstowSecurityGroup
+      KeyName: !Ref SSHKeyName
+      SourceDestCheck: false
+      Tags:
+        - Key: Name
+          Value: !Sub ${ProjectName}-server-barstow
+        - Key: Environment
+          Value: test
+        - Key: Project
+          Value: iperf3-network-testing
+        - Key: AutoTerminate
+          Value: true
+        - Key: TerminationDate
+          Value: !Sub '{{resolve:custom:TerminationDate:${TerminationDays}}}'
+
+  # Lambda for Auto-Termination
+  LambdaTerminationRole:
+    Type: 'AWS::IAM::Role'
+    Properties:
+      RoleName: !Sub ${ProjectName}-termination-lambda-role
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+      Policies:
+        - PolicyName: !Sub ${ProjectName}-termination-policy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'ec2:DescribeInstances'
+                  - 'ec2:StopInstances'
+                  - 'ec2:TerminateInstances'
+                Resource: '*'
+
+  TerminationLambdaFunction:
+    Type: 'AWS::Lambda::Function'
+    Properties:
+      FunctionName: !Sub ${ProjectName}-auto-termination
+      Handler: index.handler
+      Role: !GetAtt LambdaTerminationRole.Arn
+      Code:
+        ZipFile: |
+          import boto3
+          import datetime
+          from datetime import datetime, timezone
+          
+          def handler(event, context):
+              regions = ['us-west-2', 'us-west-1', 'ap-southeast-2']
+              
+              for region in regions:
+                  ec2 = boto3.client('ec2', region_name=region)
+                  
+                  instances = ec2.describe_instances(
+                      Filters=[
+                          {'Name': 'tag:AutoTerminate', 'Values': ['true']},
+                          {'Name': 'instance-state-name', 'Values': ['running', 'stopped']}
+                      ]
+                  )
+                  
+                  for reservation in instances['Reservations']:
+                      for instance in reservation['Instances']:
+                          instance_id = instance['InstanceId']
+                          
+                          termination_date = None
+                          for tag in instance['Tags']:
+                              if tag['Key'] == 'TerminationDate':
+                                  termination_date = tag['Value']
+                                  break
+                          
+                          if termination_date:
+                              termination_datetime = datetime.strptime(termination_date, '%Y-%m-%dT%H:%M:%SZ')
+                              if datetime.now(timezone.utc) > termination_datetime:
+                                  print(f"Terminating instance {instance_id} in region {region}")
+                                  ec2.terminate_instances(InstanceIds=[instance_id])
+          
+              return {
+                  'statusCode': 200,
+                  'body': 'Termination check completed'
+              }
+      Runtime: python3.9
+      Timeout: 60
+      Environment:
+        Variables:
+          PROJECT_NAME: !Ref ProjectName
+
+  TerminationCheckRule:
+    Type: 'AWS::Events::Rule'
+    Properties:
+      Name: !Sub ${ProjectName}-termination-check
+      Description: 'Check for instances to terminate daily'
+      ScheduleExpression: 'rate(1 day)'
+      Targets:
+        - Id: CheckTermination
+          Arn: !GetAtt TerminationLambdaFunction.Arn
+
+  LambdaPermission:
+    Type: 'AWS::Lambda::Permission'
+    Properties:
+      FunctionName: !Ref TerminationLambdaFunction
+      Action: 'lambda:InvokeFunction'
+      Principal: 'events.amazonaws.com'
+      SourceArn: !GetAtt TerminationCheckRule.Arn
+
+Outputs:
+  BastionPublicIP:
+    Description: 'Public IP address of the bastion host'
+    Value: !GetAtt BastionInstance.PublicIp
+  
+  ClientPublicIP:
+    Description: 'Public IP address of the client instance'
+    Value: !GetAtt ClientInstance.PublicIp
+  
+  CanberraServerPublicIP:
+    Description: 'Public IP address of the Canberra server'
+    Value: !GetAtt ServerCanberraInstance.PublicIp
+  
+  BarstowServerPublicIP:
+    Description: 'Public IP address of the Barstow server'
+    Value: !GetAtt ServerBarstowInstance.PublicIp
