@@ -1,5 +1,5 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'AWS iPerf3 Distributed Network Testing Automation'
+Description: 'AWS iPerf3 Distributed Network Testing Automation (Single Region)'
 
 Parameters:
   ProjectName:
@@ -41,19 +41,9 @@ Parameters:
     Default: 30
   
   PasadenaAMI:
-    Description: AMI ID for Pasadena region
+    Description: AMI ID for all regions (using SSM Parameter)
     Type: AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>
     Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
-  
-  CanberraAMI:
-    Description: AMI ID for Canberra region
-    Type: String
-    Default: ami-0310483fb2b488153
-  
-  BarstowAMI:
-    Description: AMI ID for Barstow region
-    Type: String
-    Default: ami-0a0409af1cb831414
 
 Resources:
   # PASADENA VPC (Client + Bastion) - Primary Location
@@ -80,7 +70,7 @@ Resources:
     Properties:
       VpcId: !Ref PasadenaVPC
       CidrBlock: !Ref PasadenaCidr
-      AvailabilityZone: us-west-2a
+      AvailabilityZone: us-east-1a
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -157,7 +147,7 @@ Resources:
     Properties:
       VpcId: !Ref CanberraVPC
       CidrBlock: !Ref CanberraCidr
-      AvailabilityZone: ap-southeast-2a
+      AvailabilityZone: us-east-1b
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -234,7 +224,7 @@ Resources:
     Properties:
       VpcId: !Ref BarstowVPC
       CidrBlock: !Ref BarstowCidr
-      AvailabilityZone: us-west-1a
+      AvailabilityZone: us-east-1c
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -466,7 +456,6 @@ Resources:
     Properties:
       VpcId: !Ref PasadenaVPC
       PeerVpcId: !Ref CanberraVPC
-      PeerRegion: ap-southeast-2
       Tags:
         - Key: Name
           Value: !Sub ${ProjectName}-pasadena-canberra-peer
@@ -480,7 +469,6 @@ Resources:
     Properties:
       VpcId: !Ref PasadenaVPC
       PeerVpcId: !Ref BarstowVPC
-      PeerRegion: us-west-1
       Tags:
         - Key: Name
           Value: !Sub ${ProjectName}-pasadena-barstow-peer
@@ -566,7 +554,7 @@ Resources:
   ServerCanberraInstance:
     Type: 'AWS::EC2::Instance'
     Properties:
-      ImageId: !Ref CanberraAMI
+      ImageId: !Ref PasadenaAMI
       InstanceType: !Ref InstanceType
       SubnetId: !Ref CanberraSubnet
       SecurityGroupIds:
@@ -588,7 +576,7 @@ Resources:
   ServerBarstowInstance:
     Type: 'AWS::EC2::Instance'
     Properties:
-      ImageId: !Ref BarstowAMI
+      ImageId: !Ref PasadenaAMI
       InstanceType: !Ref InstanceType
       SubnetId: !Ref BarstowSubnet
       SecurityGroupIds:
@@ -607,38 +595,13 @@ Resources:
         - Key: TerminationDate
           Value: !Sub '{{resolve:custom:TerminationDate:${TerminationDays}}}'
 
-  # Lambda for Auto-Termination
-  LambdaTerminationRole:
-    Type: 'AWS::IAM::Role'
-    Properties:
-      RoleName: !Sub ${ProjectName}-termination-lambda-role
-      AssumeRolePolicyDocument:
-        Version: '2012-10-17'
-        Statement:
-          - Effect: Allow
-            Principal:
-              Service: lambda.amazonaws.com
-            Action: 'sts:AssumeRole'
-      ManagedPolicyArns:
-        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
-      Policies:
-        - PolicyName: !Sub ${ProjectName}-termination-policy
-          PolicyDocument:
-            Version: '2012-10-17'
-            Statement:
-              - Effect: Allow
-                Action:
-                  - 'ec2:DescribeInstances'
-                  - 'ec2:StopInstances'
-                  - 'ec2:TerminateInstances'
-                Resource: '*'
-
+  # Using existing LabRole for Lambda
   TerminationLambdaFunction:
     Type: 'AWS::Lambda::Function'
     Properties:
       FunctionName: !Sub ${ProjectName}-auto-termination
       Handler: index.handler
-      Role: !GetAtt LambdaTerminationRole.Arn
+      Role: 'arn:aws:iam::355045455850:role/LabRole'
       Code:
         ZipFile: |
           import boto3
@@ -646,7 +609,7 @@ Resources:
           from datetime import datetime, timezone
           
           def handler(event, context):
-              regions = ['us-west-2', 'us-west-1', 'ap-southeast-2']
+              regions = ['us-east-1']  # Updated for single-region deployment
               
               for region in regions:
                   ec2 = boto3.client('ec2', region_name=region)
